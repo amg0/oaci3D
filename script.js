@@ -16,10 +16,9 @@ const terrainLayer = new deck.TerrainLayer({
     elevationMultiplier: 1.2
 });
 
-// "airspaceData" est injectée automatiquement par le chargement de data.js dans index.html
 const airspaceLayer = new deck.GeoJsonLayer({
     id: 'airspace',
-    data: airspaceData, 
+    data: 'data.json', // <-- LA MAGIE EST ICI : Deck.gl charge le fichier tout seul !
     stroked: true,
     filled: true,
     extruded: true,
@@ -35,10 +34,9 @@ const airspaceLayer = new deck.GeoJsonLayer({
 const deckgl = new deck.Deck({
     container: 'map',
     viewState: currentViewState, 
-    controller: { maxPitch: 90 }, // Permet de regarder l'horizon
+    controller: { maxPitch: 90 }, 
     layers: [terrainLayer, airspaceLayer],
     onViewStateChange: ({viewState}) => {
-        // Synchronisation des sliders si on navigue à la souris
         currentViewState = viewState;
         deckgl.setProps({viewState: currentViewState}); 
         
@@ -51,7 +49,6 @@ const deckgl = new deck.Deck({
 
 // 4. FONCTIONS DE CONTRÔLE (Boutons et Sliders)
 function applyViewState() { 
-    // On clone l'objet pour forcer la carte à se mettre à jour
     currentViewState = Object.assign({}, currentViewState);
     deckgl.setProps({viewState: currentViewState}); 
 }
