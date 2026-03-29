@@ -1,13 +1,13 @@
-// 1. CONFIGURATION DE LA CAMÉRA
+// 1. ÉTAT INITIAL
 let currentViewState = {
-    latitude: 45.36, 
-    longitude: 5.32, 
-    zoom: 8, 
-    pitch: 75, 
+    latitude: 45.36,
+    longitude: 5.32,
+    zoom: 8,
+    pitch: 75,
     bearing: 90
 };
 
-// 2. COUCHES 3D
+// 2. DÉFINITION DES COUCHES
 const terrainLayer = new deck.TerrainLayer({
     id: 'terrain',
     elevationDecoder: {rScaler: 256, gScaler: 1, bScaler: 1 / 256, offset: -32768},
@@ -18,62 +18,73 @@ const terrainLayer = new deck.TerrainLayer({
 
 const airspaceLayer = new deck.GeoJsonLayer({
     id: 'airspace',
-    data: 'data.json', // <-- LA MAGIE EST ICI : Deck.gl charge le fichier tout seul !
+    data: 'data.json',
     stroked: true,
     filled: true,
     extruded: true,
     wireframe: true,
-    getElevation: d => d.properties.thickness_m, 
+    getElevation: d => d.properties.thickness_m,
     getFillColor: d => d.properties.color,
     getLineColor: [255, 255, 255, 80],
     pickable: true,
     onHover: info => updateTooltip(info)
 });
 
-// 3. INITIALISATION DU MOTEUR
+// 3. INITIALISATION DU MOTEUR DECK.GL
 const deckgl = new deck.Deck({
     container: 'map',
-    viewState: currentViewState, 
-    controller: { maxPitch: 90 }, 
+    viewState: currentViewState, // Mode contrôlé
+    controller: { maxPitch: 90 },
     layers: [terrainLayer, airspaceLayer],
     onViewStateChange: ({viewState}) => {
+        // Cette fonction gère les mouvements à la SOURIS
         currentViewState = viewState;
-        deckgl.setProps({viewState: currentViewState}); 
-        
-        const pitchSlider = document.getElementById('pitch-slider');
-        const zoomSlider = document.getElementById('zoom-slider');
-        if (pitchSlider) pitchSlider.value = currentViewState.pitch;
-        if (zoomSlider) zoomSlider.value = currentViewState.zoom;
+        deckgl.setProps({viewState: currentViewState});
+        updateUI();
     }
 });
 
-// 4. FONCTIONS DE CONTRÔLE (Boutons et Sliders)
-function applyViewState() { 
-    currentViewState = Object.assign({}, currentViewState);
-    deckgl.setProps({viewState: currentViewState}); 
+// 4. SYNC MAP & UI
+function syncMap() {
+    // Force Deck.gl à voir un nouvel objet pour déclencher le rendu
+    currentViewState = { ...currentViewState };
+    deckgl.setProps({ viewState: currentViewState });
+    updateUI();
 }
 
-function moveCamera(latDiff, lonDiff) { 
-    currentViewState.latitude += latDiff; 
-    currentViewState.longitude += lonDiff; 
-    applyViewState(); 
+function updateUI() {
+    const pSlider = document.getElementById('pitch-slider');
+    const zSlider = document.getElementById('zoom-slider');
+    if (pSlider) pSlider.value = currentViewState.pitch;
+    if (zSlider) zSlider.value = currentViewState.zoom;
 }
 
-function updatePitch(val) { currentViewState.pitch = parseFloat(val); applyViewState(); }
-function updateZoom(val) { currentViewState.zoom = parseFloat(val); applyViewState(); }
+// 5. FONCTIONS EXPOSÉES AUX BOUTONS HTML
+window.moveCamera = function(latDiff, lonDiff) {
+    currentViewState.latitude += latDiff;
+    currentViewState.longitude += lonDiff;
+    syncMap();
+};
 
-// 5. INFOBULLE
+window.updatePitch = function(val) {
+    currentViewState.pitch = parseFloat(val);
+    syncMap();
+};
+
+window.updateZoom = function(val) {
+    currentViewState.zoom = parseFloat(val);
+    syncMap();
+};
+
+// 6. GESTION DE L'INFOBULLE
 function updateTooltip(info) {
     const el = document.getElementById('tooltip');
     if (info.object) {
-        const props = info.object.properties;
-        el.innerHTML = `<strong style="font-size:14px; color:#4dabf7;">${props.name}</strong><br><br>` +
-                       `<strong>Classe:</strong> ${props.class}<br>` +
-                       `<strong>Plancher:</strong> ${props.real_floor}<br>` +
-                       `<strong>Plafond:</strong> ${props.real_ceiling}`;
+        const p = info.object.properties;
+        el.innerHTML = `<strong>${p.name}</strong><br>Cl: ${p.class}<br>Alt: ${p.real_floor} / ${p.real_ceiling}`;
         el.style.display = 'block';
-        el.style.left = info.x + 20 + 'px';
-        el.style.top = info.y + 20 + 'px';
+        el.style.left = (info.x + 15) + 'px';
+        el.style.top = (info.y + 15) + 'px';
     } else {
         el.style.display = 'none';
     }

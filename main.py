@@ -4,11 +4,8 @@ import json
 import webbrowser
 import http.server
 import socketserver
-import os
 
-# ==========================================
-# 1. PARSING ET PRÉPARATION DES DONNÉES
-# ==========================================
+# --- PARSING ---
 def parse_altitude_m(alt_str):
     alt_str = str(alt_str).upper()
     if 'SFC' in alt_str or 'GND' in alt_str: return 0
@@ -40,9 +37,13 @@ def build_floating_feature(zone, colors, max_alt_m):
     }
 
 def load_airspace_data(url, max_fl=115):
-    print("📡 Téléchargement des espaces aériens depuis Planeur.net...")
-    response = requests.get(url)
-    if response.status_code != 200: return None
+    print("📡 Mise à jour des données (data.json)...")
+    try:
+        response = requests.get(url)
+        response.raise_for_status()
+    except Exception as e:
+        print(f"❌ Erreur réseau : {e}")
+        return None
         
     lines = response.text.split('\n')
     features = []
@@ -79,191 +80,25 @@ def load_airspace_data(url, max_fl=115):
                 current_zone['coords'].append([lon, lat])
     return {"type": "FeatureCollection", "features": features}
 
-# ==========================================
-# 2. TEMPLATE HTML
-# ==========================================
-HTML_TEMPLATE = """<!DOCTYPE html>
-<html lang="fr">
-<head>
-    <meta charset="utf-8">
-    <title>Carte VFR 3D Native</title>
-    <script src="https://unpkg.com/deck.gl@latest/dist.min.js"></script>
-    <style>
-        body { margin: 0; padding: 0; overflow: hidden; font-family: sans-serif; background: #000; }
-        #map { width: 100vw; height: 100vh; position: absolute; top: 0; left: 0; }
-        
-        #hud {
-            position: absolute; top: 20px; left: 20px; background: rgba(30, 30, 30, 0.85);
-            padding: 20px; border-radius: 12px; color: white; z-index: 1000;
-            backdrop-filter: blur(5px); box-shadow: 0 4px 15px rgba(0,0,0,0.5);
-        }
-        
-        .d-pad { display: grid; grid-template-columns: 45px 45px 45px; grid-template-rows: 45px 45px 45px; gap: 5px; margin-bottom: 20px; justify-content: center; }
-        .d-pad button { background: #444; color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 18px; display: flex; align-items: center; justify-content: center; }
-        .d-pad button:hover { background: #666; }
-        .d-pad button:active { background: #888; transform: scale(0.95); }
-        .btn-up { grid-column: 2; grid-row: 1; } .btn-left { grid-column: 1; grid-row: 2; } .btn-right { grid-column: 3; grid-row: 2; } .btn-down { grid-column: 2; grid-row: 3; }
-
-        .slider-group { display: flex; flex-direction: column; margin-bottom: 15px; }
-        .slider-group label { font-size: 13px; margin-bottom: 5px; color: #ccc; font-weight: bold; }
-        .slider-group input { width: 100%; cursor: pointer; }
-        
-        #tooltip {
-            position: absolute; pointer-events: none; z-index: 1001; background: rgba(0, 0, 0, 0.9);
-            color: white; padding: 12px; border-radius: 6px; font-size: 13px; display: none; 
-            white-space: pre-wrap; box-shadow: 0 2px 10px rgba(0,0,0,0.3); border: 1px solid #444;
-        }
-    </style>
-</head>
-<body>
-    <div id="map"></div>
-    <div id="tooltip"></div>
-
-    <div id="hud">
-        <h3 style="margin-top:0; text-align:center; margin-bottom:15px; font-size: 16px;">Navigation VFR</h3>
-        
-        <div class="d-pad">
-            <button type="button" class="btn-up" onclick="moveCamera(0.05, 0)">⬆️</button>
-            <button type="button" class="btn-left" onclick="moveCamera(0, -0.05)">⬅️</button>
-            <button type="button" class="btn-right" onclick="moveCamera(0, 0.05)">➡️</button>
-            <button type="button" class="btn-down" onclick="moveCamera(-0.05, 0)">⬇️</button>
-        </div>
-
-        <div class="slider-group">
-            <label>Pitch (Inclinaison)</label>
-            <input type="range" id="pitch-slider" min="0" max="90" value="75" oninput="updatePitch(this.value)">
-        </div>
-        <div class="slider-group">
-            <label>Zoom (Hauteur)</label>
-            <input type="range" id="zoom-slider" min="5" max="14" step="0.1" value="8" oninput="updateZoom(this.value)">
-        </div>
-    </div>
-
-    <script src="script.js"></script>
-</body>
-</html>"""
-
-# ==========================================
-# 3. TEMPLATE JAVASCRIPT
-# ==========================================
-JS_TEMPLATE = """// 1. CONFIGURATION DE LA CAMÉRA
-let currentViewState = {
-    latitude: 45.36, 
-    longitude: 5.32, 
-    zoom: 8, 
-    pitch: 75, 
-    bearing: 90
-};
-
-// 2. COUCHES 3D
-const terrainLayer = new deck.TerrainLayer({
-    id: 'terrain',
-    elevationDecoder: {rScaler: 256, gScaler: 1, bScaler: 1 / 256, offset: -32768},
-    elevationData: 'https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png',
-    texture: 'https://a.tile.openstreetmap.org/{z}/{x}/{y}.png',
-    elevationMultiplier: 1.2
-});
-
-const airspaceLayer = new deck.GeoJsonLayer({
-    id: 'airspace',
-    data: 'data.json', // <-- LA MAGIE EST ICI : Deck.gl charge le fichier tout seul !
-    stroked: true,
-    filled: true,
-    extruded: true,
-    wireframe: true,
-    getElevation: d => d.properties.thickness_m, 
-    getFillColor: d => d.properties.color,
-    getLineColor: [255, 255, 255, 80],
-    pickable: true,
-    onHover: info => updateTooltip(info)
-});
-
-// 3. INITIALISATION DU MOTEUR
-const deckgl = new deck.Deck({
-    container: 'map',
-    viewState: currentViewState, 
-    controller: { maxPitch: 90 }, 
-    layers: [terrainLayer, airspaceLayer],
-    onViewStateChange: ({viewState}) => {
-        currentViewState = viewState;
-        deckgl.setProps({viewState: currentViewState}); 
-        
-        const pitchSlider = document.getElementById('pitch-slider');
-        const zoomSlider = document.getElementById('zoom-slider');
-        if (pitchSlider) pitchSlider.value = currentViewState.pitch;
-        if (zoomSlider) zoomSlider.value = currentViewState.zoom;
-    }
-});
-
-// 4. FONCTIONS DE CONTRÔLE (Boutons et Sliders)
-function applyViewState() { 
-    currentViewState = Object.assign({}, currentViewState);
-    deckgl.setProps({viewState: currentViewState}); 
-}
-
-function moveCamera(latDiff, lonDiff) { 
-    currentViewState.latitude += latDiff; 
-    currentViewState.longitude += lonDiff; 
-    applyViewState(); 
-}
-
-function updatePitch(val) { currentViewState.pitch = parseFloat(val); applyViewState(); }
-function updateZoom(val) { currentViewState.zoom = parseFloat(val); applyViewState(); }
-
-// 5. INFOBULLE
-function updateTooltip(info) {
-    const el = document.getElementById('tooltip');
-    if (info.object) {
-        const props = info.object.properties;
-        el.innerHTML = `<strong style="font-size:14px; color:#4dabf7;">${props.name}</strong><br><br>` +
-                       `<strong>Classe:</strong> ${props.class}<br>` +
-                       `<strong>Plancher:</strong> ${props.real_floor}<br>` +
-                       `<strong>Plafond:</strong> ${props.real_ceiling}`;
-        el.style.display = 'block';
-        el.style.left = info.x + 20 + 'px';
-        el.style.top = info.y + 20 + 'px';
-    } else {
-        el.style.display = 'none';
-    }
-}
-"""
-
-# ==========================================
-# 4. ORCHESTRATEUR (Exécution)
-# ==========================================
+# --- ORCHESTRATEUR ---
 if __name__ == "__main__":
-    
     URL = "https://planeur-net.github.io/airspace/france.txt"
-    geojson_france = load_airspace_data(URL, max_fl=115)
+    geojson = load_airspace_data(URL, max_fl=115)
 
-    if geojson_france:
-        # A. Création du fichier de données pur JSON
+    if geojson:
         with open("data.json", "w", encoding="utf-8") as f:
-            json.dump(geojson_france, f)
-        print("✅ Fichier 'data.json' généré.")
+            json.dump(geojson, f)
+        print("✅ Fichier data.json actualisé.")
 
-        # B. Création du fichier index.html
-        with open("index.html", "w", encoding="utf-8") as f:
-            f.write(HTML_TEMPLATE)
-        print("✅ Fichier 'index.html' généré.")
+    PORT = 8000
+    class ReusableTCPServer(socketserver.TCPServer):
+        allow_reuse_address = True
 
-        # C. Création du fichier script.js
-        with open("script.js", "w", encoding="utf-8") as f:
-            f.write(JS_TEMPLATE)
-        print("✅ Fichier 'script.js' généré.")
+    print(f"🌐 Lancement sur http://localhost:{PORT}")
+    webbrowser.open(f"http://localhost:{PORT}")
 
-        # D. Lancement du Serveur Web local
-        PORT = 8000
-        class ReusableTCPServer(socketserver.TCPServer):
-            allow_reuse_address = True
-
-        print("🌐 Ouverture du navigateur...")
-        webbrowser.open(f"http://localhost:{PORT}")
-
-        try:
-            with ReusableTCPServer(("", PORT), http.server.SimpleHTTPRequestHandler) as httpd:
-                print(f"\n🚀 Serveur actif sur http://localhost:{PORT}")
-                print("💡 Appuie sur Ctrl+C dans le terminal pour l'arrêter.")
-                httpd.serve_forever()
-        except KeyboardInterrupt:
-            print("\n🛑 Serveur arrêté correctement. Bons vols !")
+    try:
+        with ReusableTCPServer(("", PORT), http.server.SimpleHTTPRequestHandler) as httpd:
+            httpd.serve_forever()
+    except KeyboardInterrupt:
+        print("\n🛑 Serveur arrêté.")
