@@ -39,10 +39,21 @@
         <h3 style="margin:0 0 15px 0; text-align:center; font-size: 14px; color: #aaa;">CONTROLE FLIGHT</h3>
         
         <div class="d-pad">
-            <button type="button" class="btn-up" onmousedown="startMove(0.02, 0)" onmouseup="stopMove()" onmouseleave="stopMove()" ontouchstart="startMove(0.02, 0)" ontouchend="stopMove()">⬆️</button>
-            <button type="button" class="btn-left" onmousedown="startMove(0, -0.02)" onmouseup="stopMove()" onmouseleave="stopMove()" ontouchstart="startMove(0, -0.02)" ontouchend="stopMove()">⬅️</button>
-            <button type="button" class="btn-right" onmousedown="startMove(0, 0.02)" onmouseup="stopMove()" onmouseleave="stopMove()" ontouchstart="startMove(0, 0.02)" ontouchend="stopMove()">➡️</button>
-            <button type="button" class="btn-down" onmousedown="startMove(-0.02, 0)" onmouseup="stopMove()" onmouseleave="stopMove()" ontouchstart="startMove(-0.02, 0)" ontouchend="stopMove()">⬇️</button>
+            <button type="button" class="btn-up" 
+                    onmousedown="startMove('UP')" onmouseup="stopMove()" onmouseleave="stopMove()" 
+                    ontouchstart="startMove('UP')" ontouchend="stopMove()">⬆️</button>
+                    
+            <button type="button" class="btn-left" 
+                    onmousedown="startMove('LEFT')" onmouseup="stopMove()" onmouseleave="stopMove()" 
+                    ontouchstart="startMove('LEFT')" ontouchend="stopMove()">⬅️</button>
+                    
+            <button type="button" class="btn-right" 
+                    onmousedown="startMove('RIGHT')" onmouseup="stopMove()" onmouseleave="stopMove()" 
+                    ontouchstart="startMove('RIGHT')" ontouchend="stopMove()">➡️</button>
+                    
+            <button type="button" class="btn-down" 
+                    onmousedown="startMove('DOWN')" onmouseup="stopMove()" onmouseleave="stopMove()" 
+                    ontouchstart="startMove('DOWN')" ontouchend="stopMove()">⬇️</button>
         </div>
 
         <button type="button" class="btn-reset" onclick="recenter()">RECENTER 📍</button>
