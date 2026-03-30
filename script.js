@@ -1,13 +1,21 @@
-// 1. ÉTAT INITIAL
-let currentViewState = {
+// --- CONFIGURATION ---
+window.currentViewState = {
     latitude: 45.36,
     longitude: 5.32,
-    zoom: 8,
+    zoom: 9.3, // Correspond à environ 3000m
     pitch: 75,
     bearing: 90
 };
 
-// 2. DÉFINITION DES COUCHES
+// Fonctions de conversion (Approximation France 45°N)
+function altToZoom(alt) {
+    return Math.log2(20000000 / alt);
+}
+function zoomToAlt(zoom) {
+    return Math.round(20000000 / Math.pow(2, zoom));
+}
+
+// --- COUCHES ---
 const terrainLayer = new deck.TerrainLayer({
     id: 'terrain',
     elevationDecoder: {rScaler: 256, gScaler: 1, bScaler: 1 / 256, offset: -32768},
@@ -30,53 +38,51 @@ const airspaceLayer = new deck.GeoJsonLayer({
     onHover: info => updateTooltip(info)
 });
 
-// 3. INITIALISATION DU MOTEUR DECK.GL
-const deckgl = new deck.Deck({
+// --- MOTEUR ---
+window.deckgl = new deck.Deck({
     container: 'map',
-    viewState: currentViewState, // Mode contrôlé
+    viewState: window.currentViewState,
     controller: { maxPitch: 90 },
     layers: [terrainLayer, airspaceLayer],
     onViewStateChange: ({viewState}) => {
-        // Cette fonction gère les mouvements à la SOURIS
-        currentViewState = viewState;
-        deckgl.setProps({viewState: currentViewState});
+        window.currentViewState = viewState;
+        window.deckgl.setProps({viewState: window.currentViewState});
         updateUI();
     }
 });
 
-// 4. SYNC MAP & UI
-function syncMap() {
-    // Force Deck.gl à voir un nouvel objet pour déclencher le rendu
-    currentViewState = { ...currentViewState };
-    deckgl.setProps({ viewState: currentViewState });
-    updateUI();
-}
-
+// --- UPDATE UI ---
 function updateUI() {
     const pSlider = document.getElementById('pitch-slider');
-    const zSlider = document.getElementById('zoom-slider');
-    if (pSlider) pSlider.value = currentViewState.pitch;
-    if (zSlider) zSlider.value = currentViewState.zoom;
+    const aSlider = document.getElementById('alt-slider');
+    const aVal = document.getElementById('alt-val');
+    
+    if (pSlider) pSlider.value = window.currentViewState.pitch;
+    
+    const currentAlt = zoomToAlt(window.currentViewState.zoom);
+    if (aSlider) aSlider.value = currentAlt;
+    if (aVal) aVal.innerHTML = currentAlt + " m";
 }
 
-// 5. FONCTIONS EXPOSÉES AUX BOUTONS HTML
+// --- ACTIONS ---
 window.moveCamera = function(latDiff, lonDiff) {
-    currentViewState.latitude += latDiff;
-    currentViewState.longitude += lonDiff;
-    syncMap();
+    window.currentViewState.latitude += latDiff;
+    window.currentViewState.longitude += lonDiff;
+    window.deckgl.setProps({ viewState: { ...window.currentViewState } });
 };
 
 window.updatePitch = function(val) {
-    currentViewState.pitch = parseFloat(val);
-    syncMap();
+    window.currentViewState.pitch = parseFloat(val);
+    window.deckgl.setProps({ viewState: { ...window.currentViewState } });
 };
 
-window.updateZoom = function(val) {
-    currentViewState.zoom = parseFloat(val);
-    syncMap();
+window.updateAltitude = function(val) {
+    const alt = parseFloat(val);
+    window.currentViewState.zoom = altToZoom(alt);
+    document.getElementById('alt-val').innerHTML = Math.round(alt) + " m";
+    window.deckgl.setProps({ viewState: { ...window.currentViewState } });
 };
 
-// 6. GESTION DE L'INFOBULLE
 function updateTooltip(info) {
     const el = document.getElementById('tooltip');
     if (info.object) {
@@ -85,7 +91,5 @@ function updateTooltip(info) {
         el.style.display = 'block';
         el.style.left = (info.x + 15) + 'px';
         el.style.top = (info.y + 15) + 'px';
-    } else {
-        el.style.display = 'none';
-    }
+    } else { el.style.display = 'none'; }
 }

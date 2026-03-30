@@ -10,40 +10,53 @@
         #hud {
             position: absolute; top: 20px; left: 20px; background: rgba(30, 30, 30, 0.85);
             padding: 20px; border-radius: 12px; color: white; z-index: 1000;
-            backdrop-filter: blur(5px); box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+            backdrop-filter: blur(5px); box-shadow: 0 4px 15px rgba(0,0,0,0.5); width: 200px;
         }
-        .d-pad { display: grid; grid-template-columns: 45px 45px 45px; grid-template-rows: 45px 45px 45px; gap: 5px; margin-bottom: 20px; justify-content: center; }
-        .d-pad button { background: #444; color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 18px; display: flex; align-items: center; justify-content: center; }
+        .d-pad { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 5px; margin-bottom: 20px; }
+        .d-pad button { background: #444; color: white; border: none; border-radius: 8px; cursor: pointer; height: 40px; font-size: 18px; }
         .d-pad button:hover { background: #666; }
-        .btn-up { grid-column: 2; grid-row: 1; } .btn-left { grid-column: 1; grid-row: 2; } .btn-right { grid-column: 3; grid-row: 2; } .btn-down { grid-column: 2; grid-row: 3; }
+        .btn-up { grid-column: 2; } .btn-left { grid-column: 1; } .btn-right { grid-column: 3; } .btn-down { grid-column: 2; }
+        
         .slider-group { display: flex; flex-direction: column; margin-bottom: 15px; }
-        .slider-group label { font-size: 12px; margin-bottom: 5px; color: #ccc; }
+        .slider-group label { font-size: 11px; margin-bottom: 5px; color: #ccc; text-transform: uppercase; }
+        .slider-group span { font-size: 14px; font-weight: bold; color: #4dabf7; margin-bottom: 5px; }
+        
         #tooltip {
             position: absolute; pointer-events: none; z-index: 1001; background: rgba(0, 0, 0, 0.9);
-            color: white; padding: 12px; border-radius: 6px; font-size: 13px; display: none; white-space: pre-wrap;
+            color: white; padding: 12px; border-radius: 6px; font-size: 13px; display: none; border: 1px solid #444;
         }
     </style>
 </head>
 <body>
     <div id="map"></div>
     <div id="tooltip"></div>
+
     <div id="hud">
-        <h3 style="margin-top:0; text-align:center; font-size: 16px;">Navigation VFR</h3>
+        <h3 style="margin:0 0 15px 0; text-align:center; font-size: 14px;">NAVIGATION VFR</h3>
+        
         <div class="d-pad">
             <button type="button" class="btn-up" onclick="moveCamera(0.05, 0)">⬆️</button>
             <button type="button" class="btn-left" onclick="moveCamera(0, -0.05)">⬅️</button>
             <button type="button" class="btn-right" onclick="moveCamera(0, 0.05)">➡️</button>
             <button type="button" class="btn-down" onclick="moveCamera(-0.05, 0)">⬇️</button>
         </div>
+
         <div class="slider-group">
-            <label>Pitch</label>
+            <label>Altitude (mètres)</label>
+            <span id="alt-val">3000 m</span>
+            <input type="range" id="alt-slider" min="500" max="15000" step="100" value="3000" oninput="updateAltitude(this.value)">
+        </div>
+
+        <div class="slider-group">
+            <label>Inclinaison (Pitch)</label>
             <input type="range" id="pitch-slider" min="0" max="90" value="75" oninput="updatePitch(this.value)">
         </div>
-        <div class="slider-group">
-            <label>Zoom</label>
-            <input type="range" id="zoom-slider" min="5" max="14" step="0.1" value="8" oninput="updateZoom(this.value)">
-        </div>
     </div>
-    <script src="script.js"></script>
+
+    <script>
+        const script = document.createElement('script');
+        script.src = 'script.js?v=' + new Date().getTime();
+        document.body.appendChild(script);
+    </script>
 </body>
 </html>
