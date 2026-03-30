@@ -1,19 +1,17 @@
 // --- CONFIGURATION ---
-window.currentViewState = {
+const DEFAULT_VIEW = {
     latitude: 45.36,
     longitude: 5.32,
-    zoom: 9.3, // Correspond à environ 3000m
+    zoom: 10.2, // ~5500 FT
     pitch: 75,
     bearing: 90
 };
 
-// Fonctions de conversion (Approximation France 45°N)
-function altToZoom(alt) {
-    return Math.log2(20000000 / alt);
-}
-function zoomToAlt(zoom) {
-    return Math.round(20000000 / Math.pow(2, zoom));
-}
+window.currentViewState = { ...DEFAULT_VIEW };
+const FT_CONSTANT = 65616797; 
+
+function altToZoom(altFt) { return Math.log2(FT_CONSTANT / altFt); }
+function zoomToAlt(zoom) { return Math.round(FT_CONSTANT / Math.pow(2, zoom)); }
 
 // --- COUCHES ---
 const terrainLayer = new deck.TerrainLayer({
@@ -27,10 +25,7 @@ const terrainLayer = new deck.TerrainLayer({
 const airspaceLayer = new deck.GeoJsonLayer({
     id: 'airspace',
     data: 'data.json',
-    stroked: true,
-    filled: true,
-    extruded: true,
-    wireframe: true,
+    stroked: true, filled: true, extruded: true, wireframe: true,
     getElevation: d => d.properties.thickness_m,
     getFillColor: d => d.properties.color,
     getLineColor: [255, 255, 255, 80],
@@ -45,30 +40,42 @@ window.deckgl = new deck.Deck({
     controller: { maxPitch: 90 },
     layers: [terrainLayer, airspaceLayer],
     onViewStateChange: ({viewState}) => {
+        // Limite FL400 (zoom min)
+        const minZoom = altToZoom(40000); 
+        if (viewState.zoom < minZoom) viewState.zoom = minZoom;
+        
         window.currentViewState = viewState;
         window.deckgl.setProps({viewState: window.currentViewState});
         updateUI();
     }
 });
 
-// --- UPDATE UI ---
-function updateUI() {
-    const pSlider = document.getElementById('pitch-slider');
-    const aSlider = document.getElementById('alt-slider');
-    const aVal = document.getElementById('alt-val');
-    
-    if (pSlider) pSlider.value = window.currentViewState.pitch;
-    
-    const currentAlt = zoomToAlt(window.currentViewState.zoom);
-    if (aSlider) aSlider.value = currentAlt;
-    if (aVal) aVal.innerHTML = currentAlt + " m";
-}
+// --- AUTO-REPEAT LOGIC ---
+let moveInterval = null;
+
+window.startMove = function(latD, lonD) {
+    if (moveInterval) return;
+    // Execute une fois puis repete
+    moveCamera(latD, lonD);
+    moveInterval = setInterval(() => moveCamera(latD, lonD), 50); // 20 images par seconde
+};
+
+window.stopMove = function() {
+    clearInterval(moveInterval);
+    moveInterval = null;
+};
 
 // --- ACTIONS ---
-window.moveCamera = function(latDiff, lonDiff) {
+function moveCamera(latDiff, lonDiff) {
     window.currentViewState.latitude += latDiff;
     window.currentViewState.longitude += lonDiff;
     window.deckgl.setProps({ viewState: { ...window.currentViewState } });
+}
+
+window.recenter = function() {
+    window.currentViewState = { ...DEFAULT_VIEW };
+    window.deckgl.setProps({ viewState: { ...window.currentViewState } });
+    updateUI();
 };
 
 window.updatePitch = function(val) {
@@ -77,11 +84,18 @@ window.updatePitch = function(val) {
 };
 
 window.updateAltitude = function(val) {
-    const alt = parseFloat(val);
-    window.currentViewState.zoom = altToZoom(alt);
-    document.getElementById('alt-val').innerHTML = Math.round(alt) + " m";
+    let altFt = parseFloat(val);
+    window.currentViewState.zoom = altToZoom(altFt);
     window.deckgl.setProps({ viewState: { ...window.currentViewState } });
+    updateUI();
 };
+
+function updateUI() {
+    document.getElementById('pitch-slider').value = window.currentViewState.pitch;
+    const currentAltFt = zoomToAlt(window.currentViewState.zoom);
+    document.getElementById('alt-slider').value = currentAltFt;
+    document.getElementById('alt-val').innerHTML = currentAltFt + " FT";
+}
 
 function updateTooltip(info) {
     const el = document.getElementById('tooltip');

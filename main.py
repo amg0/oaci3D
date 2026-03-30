@@ -13,7 +13,8 @@ def build_floating_feature(zone, colors, max_alt_m):
     zone_class = zone.get('class', 'U')
     color = colors.get(zone_class[0] if zone_class else 'U', [150, 150, 150, 80])
     floor_m = zone.get('floor_m', 0)
-    display_ceiling = min(zone.get('ceiling_m', 1500), max_alt_m)
+    # On utilise maintenant la limite FL400
+    display_ceiling = min(zone.get('ceiling_m', 40000 * 0.3048), max_alt_m)
     thickness_m = max(0, display_ceiling - floor_m)
     coords_3d = [[pt[0], pt[1], floor_m] for pt in zone['coords']]
     return {
@@ -27,19 +28,21 @@ def build_floating_feature(zone, colors, max_alt_m):
     }
 
 if __name__ == "__main__":
-    print("📡 Mise à jour data.json...")
+    print("📡 Mise à jour data.json (Filtre FL400)...")
     res = requests.get("https://planeur-net.github.io/airspace/france.txt")
     features = []
     current_zone = None
     colors = {'A': [255, 0, 0, 80], 'C': [255, 100, 0, 80], 'D': [0, 100, 255, 80], 'E': [0, 200, 0, 80], 'R': [150, 0, 0, 100], 'P': [255, 0, 255, 100], 'Q': [200, 0, 0, 80]}
+    
+    LIMIT_M = 12192 # FL400 en mètres
 
     for line in res.text.split('\n'):
         line = line.strip()
         if not line or line.startswith('*'): continue
         if line.startswith('AC '):
             if current_zone and len(current_zone.get('coords', [])) >= 3:
-                if current_zone.get('floor_m', 0) < 3505: # FL115
-                    features.append(build_floating_feature(current_zone, colors, 3505))
+                if current_zone.get('floor_m', 0) < LIMIT_M:
+                    features.append(build_floating_feature(current_zone, colors, LIMIT_M))
             current_zone = {'class': line[3:].strip(), 'coords': []}
         elif line.startswith('AN '): current_zone['name'] = line[3:].strip()
         elif line.startswith('AL '):
