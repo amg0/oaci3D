@@ -57,6 +57,13 @@
             <label>Pitch</label>
             <input type="range" id="pitch-slider" min="0" max="90" value="75" oninput="updatePitch(this.value)">
         </div>
+
+        <div class="slider-group">
+            <label>Masquer zones > (FT)</label>
+            <span id="filter-val">Toutes</span>
+            <input type="range" id="filter-slider" min="0" max="40000" step="500" value="40000" oninput="updateFloorFilter(this.value)">
+        </div>
+
     </div>
 
     <script>

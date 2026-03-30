@@ -1,14 +1,15 @@
-// --- CONFIGURATION ---
+// --- CONFIGURATION PAR DÉFAUT (LFLG - Le Versoud) ---
 const DEFAULT_VIEW = {
-    latitude: 45.36,
-    longitude: 5.32,
-    zoom: 10.2, // ~5500 FT
+    latitude: 45.2178,
+    longitude: 5.8492,
+    zoom: 10.5,     // Environ 4500 FT
     pitch: 75,
-    bearing: 90
+    bearing: 0      // Plein Nord
 };
 
 window.currentViewState = { ...DEFAULT_VIEW };
 const FT_CONSTANT = 65616797; 
+let allAirspaces = []; // Stockage des données brutes pour le filtre
 
 function altToZoom(altFt) { return Math.log2(FT_CONSTANT / altFt); }
 function zoomToAlt(zoom) { return Math.round(FT_CONSTANT / Math.pow(2, zoom)); }
@@ -22,50 +23,65 @@ const terrainLayer = new deck.TerrainLayer({
     elevationMultiplier: 1.2
 });
 
-const airspaceLayer = new deck.GeoJsonLayer({
-    id: 'airspace',
-    data: 'data.json',
-    stroked: true, filled: true, extruded: true, wireframe: true,
-    getElevation: d => d.properties.thickness_m,
-    getFillColor: d => d.properties.color,
-    getLineColor: [255, 255, 255, 80],
-    pickable: true,
-    onHover: info => updateTooltip(info)
-});
+// Création de la couche GeoJson (vide au départ)
+let airspaceLayer = new deck.GeoJsonLayer({ id: 'airspace' });
+
+// --- CHARGEMENT DES DONNÉES ---
+fetch('data.json')
+    .then(res => res.json())
+    .then(data => {
+        allAirspaces = data.features;
+        updateFloorFilter(40000); // Initialise avec tout afficher
+    });
 
 // --- MOTEUR ---
 window.deckgl = new deck.Deck({
     container: 'map',
     viewState: window.currentViewState,
     controller: { maxPitch: 90 },
-    layers: [terrainLayer, airspaceLayer],
+    layers: [terrainLayer],
     onViewStateChange: ({viewState}) => {
-        // Limite FL400 (zoom min)
-        const minZoom = altToZoom(40000); 
-        if (viewState.zoom < minZoom) viewState.zoom = minZoom;
-        
         window.currentViewState = viewState;
         window.deckgl.setProps({viewState: window.currentViewState});
         updateUI();
     }
 });
 
-// --- AUTO-REPEAT LOGIC ---
-let moveInterval = null;
+// --- LOGIQUE DE FILTRE ---
+window.updateFloorFilter = function(val) {
+    const limit = parseInt(val);
+    document.getElementById('filter-val').innerHTML = limit >= 40000 ? "Toutes" : limit + " FT";
+    
+    // On filtre les zones dont le plancher est inférieur à la limite choisie
+    const filteredData = {
+        type: "FeatureCollection",
+        features: allAirspaces.filter(f => f.properties.floor_ft <= limit)
+    };
 
+    // On recrée la couche avec les données filtrées
+    airspaceLayer = new deck.GeoJsonLayer({
+        id: 'airspace',
+        data: filteredData,
+        stroked: true, filled: true, extruded: true, wireframe: true,
+        getElevation: d => d.properties.thickness_m,
+        getFillColor: d => d.properties.color,
+        getLineColor: [255, 255, 255, 80],
+        pickable: true,
+        onHover: info => updateTooltip(info)
+    });
+
+    window.deckgl.setProps({ layers: [terrainLayer, airspaceLayer] });
+};
+
+// --- NAVIGATION & AUTO-REPEAT ---
+let moveInterval = null;
 window.startMove = function(latD, lonD) {
     if (moveInterval) return;
-    // Execute une fois puis repete
     moveCamera(latD, lonD);
-    moveInterval = setInterval(() => moveCamera(latD, lonD), 50); // 20 images par seconde
+    moveInterval = setInterval(() => moveCamera(latD, lonD), 50);
 };
+window.stopMove = function() { clearInterval(moveInterval); moveInterval = null; };
 
-window.stopMove = function() {
-    clearInterval(moveInterval);
-    moveInterval = null;
-};
-
-// --- ACTIONS ---
 function moveCamera(latDiff, lonDiff) {
     window.currentViewState.latitude += latDiff;
     window.currentViewState.longitude += lonDiff;
@@ -84,8 +100,7 @@ window.updatePitch = function(val) {
 };
 
 window.updateAltitude = function(val) {
-    let altFt = parseFloat(val);
-    window.currentViewState.zoom = altToZoom(altFt);
+    window.currentViewState.zoom = altToZoom(parseFloat(val));
     window.deckgl.setProps({ viewState: { ...window.currentViewState } });
     updateUI();
 };
