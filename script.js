@@ -40,8 +40,8 @@ window.deckgl = new deck.Deck({
     controller: { maxPitch: 90 },
     layers: [terrainLayer],
     onViewStateChange: ({viewState}) => {
-        // Limite FL400
-        const minZoom = altToZoom(40000);
+        // CORRECTION : On redonne la liberté de dézoomer (voler) jusqu'à 60 000 FT
+        const minZoom = altToZoom(60000);
         if (viewState.zoom < minZoom) viewState.zoom = minZoom;
         
         window.currentViewState = viewState;
@@ -63,13 +63,11 @@ window.moveCamera = function(direction) {
     const bearingRad = (newState.bearing * Math.PI) / 180;
     const pitchRad = (newState.pitch * Math.PI) / 180;
 
-    // Fonction de compensation "Ascenseur" (Annule le recul optique du zoom)
     const getElevatorComp = (deltaAlt) => {
         return Math.abs(deltaAlt * 0.3048) * Math.tan(pitchRad) * 0.000009;
     };
 
     switch(direction) {
-        // --- TRANSLATIONS RELATIVES ---
         case 'UP':
             newState.latitude += step * Math.cos(bearingRad);
             newState.longitude += step * Math.sin(bearingRad);
@@ -87,7 +85,6 @@ window.moveCamera = function(direction) {
             newState.longitude += step * Math.sin(bearingRad + Math.PI/2);
             break;
 
-        // --- ROTATIONS ---
         case 'ROTATE_LEFT':
             newState.bearing -= rotStep;
             break;
@@ -95,14 +92,13 @@ window.moveCamera = function(direction) {
             newState.bearing += rotStep;
             break;
 
-        // --- MOUVEMENT VERTICAL PUR (ASCENSEUR) ---
         case 'CLIMB':
             let oldAltC = zoomToAlt(newState.zoom);
-            let newAltC = Math.min(oldAltC + altStep, 40000);
+            // CORRECTION : Le bouton Monter permet à nouveau d'aller jusqu'à 60 000 FT
+            let newAltC = Math.min(oldAltC + altStep, 60000);
             newState.zoom = altToZoom(newAltC);
             
             let compC = getElevatorComp(newAltC - oldAltC);
-            // On AVANCE la cible pour contrer le recul optique de la montée
             newState.latitude += compC * Math.cos(bearingRad);
             newState.longitude += compC * Math.sin(bearingRad);
             break;
@@ -113,7 +109,6 @@ window.moveCamera = function(direction) {
             newState.zoom = altToZoom(newAltD);
             
             let compD = getElevatorComp(newAltD - oldAltD);
-            // On RECULE la cible pour contrer l'avancée optique de la descente
             newState.latitude -= compD * Math.cos(bearingRad);
             newState.longitude -= compD * Math.sin(bearingRad);
             break;
@@ -124,7 +119,6 @@ window.moveCamera = function(direction) {
     updateUI();
 };
 
-// --- GESTION AUTO-REPEAT ---
 let moveInterval = null;
 window.startMove = function(direction) {
     if (moveInterval) return;
@@ -159,9 +153,9 @@ window.updateAltitude = function(val) {
 window.updateFloorFilter = function(val) {
     const limit = parseInt(val);
     const label = document.getElementById('filter-val');
-    if (label) label.innerHTML = limit >= 40000 ? "Toutes" : limit + " FT";
+    // Le filtre visuel s'arrête bien à 20 000 FT
+    if (label) label.innerHTML = limit >= 20000 ? "Toutes" : limit + " FT";
     
-    // Filtrage dynamique des données
     const filteredData = {
         type: "FeatureCollection",
         features: allAirspaces.filter(f => f.properties.floor_ft <= limit)
@@ -176,9 +170,12 @@ window.updateFloorFilter = function(val) {
         wireframe: true,
         getElevation: d => d.properties.thickness_m,
         getFillColor: d => d.properties.color,
-        getLineColor: [255, 255, 255, 80],
+        getLineColor: d => d.properties.is_dashed ? [255, 150, 150, 200] : [255, 255, 255, 80],
         pickable: true,
-        onHover: info => updateTooltip(info)
+        onHover: info => updateTooltip(info),
+        updateTriggers: {
+            data: limit
+        }
     });
 
     window.deckgl.setProps({ layers: [terrainLayer, layer] });
@@ -198,16 +195,14 @@ function updateUI() {
 // ==========================================
 // 📥 CHARGEMENT DES DONNÉES JSON (ANTI-CACHE)
 // ==========================================
-// On force le navigateur à télécharger la dernière version générée par Python
 const noCacheUrl = 'data.json?v=' + new Date().getTime();
 
 fetch(noCacheUrl)
     .then(res => res.json())
     .then(data => {
         allAirspaces = data.features;
-        // On initialise le filtre avec la valeur actuelle du slider (ou 40000 par défaut)
         const slider = document.getElementById('filter-slider');
-        window.updateFloorFilter(slider ? slider.value : 40000); 
+        window.updateFloorFilter(slider ? slider.value : 20000); 
     })
     .catch(err => console.error("Erreur de chargement du JSON:", err));
 
