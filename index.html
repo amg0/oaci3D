@@ -2,23 +2,40 @@
 <html lang="fr">
 <head>
     <meta charset="utf-8">
-    <title>Carte VFR 3D - FL400</title>
+    <title>Carte VFR 3D</title>
     <script src="https://unpkg.com/deck.gl@latest/dist.min.js"></script>
     <style>
         body { margin: 0; padding: 0; overflow: hidden; font-family: sans-serif; background: #000; }
         #map { width: 100vw; height: 100vh; position: absolute; top: 0; left: 0; }
+        
         #hud {
             position: absolute; top: 20px; left: 20px; background: rgba(30, 30, 30, 0.85);
             padding: 20px; border-radius: 12px; color: white; z-index: 1000;
             backdrop-filter: blur(5px); box-shadow: 0 4px 15px rgba(0,0,0,0.5); width: 220px;
         }
-        .d-pad { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 5px; margin-bottom: 10px; }
-        .d-pad button { background: #444; color: white; border: none; border-radius: 8px; cursor: pointer; height: 40px; font-size: 18px; user-select: none; }
+
+        /* Grille 3x3 parfaite pour le pilotage */
+        .d-pad { 
+            display: grid; 
+            grid-template-columns: 1fr 1fr 1fr; 
+            gap: 5px; 
+            margin-bottom: 10px; 
+        }
+        
+        .d-pad button { 
+            background: #444; color: white; border: none; border-radius: 8px; 
+            cursor: pointer; height: 40px; font-size: 18px; user-select: none; 
+            display: flex; justify-content: center; align-items: center;
+        }
+        
         .d-pad button:hover { background: #666; }
         .d-pad button:active { background: #ffcc00; color: black; }
-        .btn-up { grid-column: 2; } .btn-left { grid-column: 1; } .btn-right { grid-column: 3; } .btn-down { grid-column: 2; }
         
-        .btn-reset { width: 100%; background: #c44; color: white; border: none; border-radius: 8px; height: 35px; cursor: pointer; font-weight: bold; margin-bottom: 20px; }
+        .btn-reset { 
+            width: 100%; background: #c44; color: white; border: none; 
+            border-radius: 8px; height: 35px; cursor: pointer; 
+            font-weight: bold; margin-bottom: 20px; 
+        }
         .btn-reset:hover { background: #e55; }
 
         .slider-group { display: flex; flex-direction: column; margin-bottom: 15px; }
@@ -36,38 +53,23 @@
     <div id="tooltip"></div>
 
     <div id="hud">
-        <h3 style="margin:0 0 15px 0; text-align:center; font-size: 14px; color: #aaa;">CONTROLE FLIGHT</h3>
+        <h3 style="margin:0 0 15px 0; text-align:center; font-size: 14px; color: #aaa;">CONTRÔLE VOL</h3>
         
         <div class="d-pad">
-            <button type="button" class="btn-up" 
-                    onmousedown="startMove('UP')" onmouseup="stopMove()" onmouseleave="stopMove()" 
-                    ontouchstart="startMove('UP')" ontouchend="stopMove()">⬆️</button>
-                    
-            <button type="button" class="btn-left" 
-                    onmousedown="startMove('LEFT')" onmouseup="stopMove()" onmouseleave="stopMove()" 
-                    ontouchstart="startMove('LEFT')" ontouchend="stopMove()">⬅️</button>
-                    
-            <button type="button" class="btn-right" 
-                    onmousedown="startMove('RIGHT')" onmouseup="stopMove()" onmouseleave="stopMove()" 
-                    ontouchstart="startMove('RIGHT')" ontouchend="stopMove()">➡️</button>
-                    
-            <button type="button" class="btn-down" 
-                    onmousedown="startMove('DOWN')" onmouseup="stopMove()" onmouseleave="stopMove()" 
-                    ontouchstart="startMove('DOWN')" ontouchend="stopMove()">⬇️</button>
+            <button type="button" title="Turn Left" style="font-size: 22px;" onmousedown="startMove('ROTATE_LEFT')" onmouseup="stopMove()" onmouseleave="stopMove()" ontouchstart="startMove('ROTATE_LEFT')" ontouchend="stopMove()">↺</button>
+            <button type="button" title="Forward" onmousedown="startMove('UP')" onmouseup="stopMove()" onmouseleave="stopMove()" ontouchstart="startMove('UP')" ontouchend="stopMove()">⬆️</button>
+            <button type="button" title="Turn Right" style="font-size: 22px;" onmousedown="startMove('ROTATE_RIGHT')" onmouseup="stopMove()" onmouseleave="stopMove()" ontouchstart="startMove('ROTATE_RIGHT')" ontouchend="stopMove()">↻</button>
+            
+            <button type="button" title="Strafe Left" onmousedown="startMove('LEFT')" onmouseup="stopMove()" onmouseleave="stopMove()" ontouchstart="startMove('LEFT')" ontouchend="stopMove()">⬅️</button>
+            <button type="button" style="background:none; border:none; pointer-events:none;"></button>
+            <button type="button" title="Strafe Right" onmousedown="startMove('RIGHT')" onmouseup="stopMove()" onmouseleave="stopMove()" ontouchstart="startMove('RIGHT')" ontouchend="stopMove()">➡️</button>
+            
+            <button type="button" title="Descent" style="font-size: 20px;" onmousedown="startMove('DESCENT')" onmouseup="stopMove()" onmouseleave="stopMove()" ontouchstart="startMove('DESCENT')" ontouchend="stopMove()">⏬</button>
+            <button type="button" title="Backward" onmousedown="startMove('DOWN')" onmouseup="stopMove()" onmouseleave="stopMove()" ontouchstart="startMove('DOWN')" ontouchend="stopMove()">⬇️</button>
+            <button type="button" title="Climb" style="font-size: 20px;" onmousedown="startMove('CLIMB')" onmouseup="stopMove()" onmouseleave="stopMove()" ontouchstart="startMove('CLIMB')" ontouchend="stopMove()">⏫</button>
         </div>
 
         <button type="button" class="btn-reset" onclick="recenter()">RECENTER 📍</button>
-
-        <div class="slider-group">
-            <label>Altitude (FT)</label>
-            <span id="alt-val">5500 FT</span>
-            <input type="range" id="alt-slider" min="1000" max="40000" step="100" value="5500" oninput="updateAltitude(this.value)">
-        </div>
-
-        <div class="slider-group">
-            <label>Pitch</label>
-            <input type="range" id="pitch-slider" min="0" max="90" value="75" oninput="updatePitch(this.value)">
-        </div>
 
         <div class="slider-group">
             <label>Masquer zones > (FT)</label>
@@ -75,6 +77,16 @@
             <input type="range" id="filter-slider" min="0" max="40000" step="500" value="40000" oninput="updateFloorFilter(this.value)">
         </div>
 
+        <div class="slider-group">
+            <label>Altitude de vol (FT)</label>
+            <span id="alt-val">5500 FT</span>
+            <input type="range" id="alt-slider" min="500" max="40000" step="100" value="5500" oninput="updateAltitude(this.value)">
+        </div>
+
+        <div class="slider-group">
+            <label>Inclinaison (Pitch)</label>
+            <input type="range" id="pitch-slider" min="0" max="90" value="75" oninput="updatePitch(this.value)">
+        </div>
     </div>
 
     <script>
