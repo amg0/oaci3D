@@ -63,7 +63,7 @@ window.moveCamera = function(direction) {
     const bearingRad = (newState.bearing * Math.PI) / 180;
     const pitchRad = (newState.pitch * Math.PI) / 180;
 
-    // Fonction de compensation "Ascenseur"
+    // Fonction de compensation "Ascenseur" (Annule le recul optique du zoom)
     const getElevatorComp = (deltaAlt) => {
         return Math.abs(deltaAlt * 0.3048) * Math.tan(pitchRad) * 0.000009;
     };
@@ -161,6 +161,7 @@ window.updateFloorFilter = function(val) {
     const label = document.getElementById('filter-val');
     if (label) label.innerHTML = limit >= 40000 ? "Toutes" : limit + " FT";
     
+    // Filtrage dynamique des données
     const filteredData = {
         type: "FeatureCollection",
         features: allAirspaces.filter(f => f.properties.floor_ft <= limit)
@@ -195,15 +196,20 @@ function updateUI() {
 }
 
 // ==========================================
-// 📥 CHARGEMENT DES DONNÉES JSON
+// 📥 CHARGEMENT DES DONNÉES JSON (ANTI-CACHE)
 // ==========================================
-fetch('data.json')
+// On force le navigateur à télécharger la dernière version générée par Python
+const noCacheUrl = 'data.json?v=' + new Date().getTime();
+
+fetch(noCacheUrl)
     .then(res => res.json())
     .then(data => {
         allAirspaces = data.features;
-        window.updateFloorFilter(40000); // Affiche tout au démarrage
+        // On initialise le filtre avec la valeur actuelle du slider (ou 40000 par défaut)
+        const slider = document.getElementById('filter-slider');
+        window.updateFloorFilter(slider ? slider.value : 40000); 
     })
-    .catch(err => console.error("Erreur JSON:", err));
+    .catch(err => console.error("Erreur de chargement du JSON:", err));
 
 function updateTooltip(info) {
     const el = document.getElementById('tooltip');

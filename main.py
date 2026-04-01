@@ -11,23 +11,24 @@ import sys
 # ⚙️ CONFIGURATION ET CONSTANTES
 # ==========================================
 PORT = 8000
-AIRSPACE_URL = "https://planeur-net.github.io/airspace/france.txt"
-FL_LIMIT = 300  # Plafond de l'espace aérien à afficher (FL300)
+GEOJSON_URL = "https://planeur-net.github.io/airspace/france.geojson"
+FL_LIMIT = 400  
 DATA_FILE = "data.json"
 
-# Couleurs des zones [R, G, B, Opacité]
+# [Rouge, Vert, Bleu, Opacité]
 ZONE_COLORS = {
-    'A': [255, 0, 0, 95],      # Rouge (Interdit/Strict)
-    'C': [255, 120, 0, 95],    # Orange
-    'D': [0, 120, 255, 95],    # Bleu (TMA/CTR)
-    'E': [0, 200, 0, 85],      # Vert
-    'R': [200, 0, 0, 120],     # Rouge foncé (Restreint)
-    'P': [255, 0, 255, 120],   # Violet (Prohibé)
-    'Q': [200, 0, 0, 95],      # Danger
-    'U': [150, 150, 150, 75]   # Gris (Inconnu/Autre)
+    # Lettres simples (Classes de vol)
+    'A': [255, 0, 0, 95],      
+    'C': [255, 120, 0, 95],    
+    'D': [0, 120, 255, 95],    # Bleu standard
+    'E': [0, 200, 0, 85],      
+    'U': [150, 150, 150, 75],  # Gris par défaut
+    
+    # Mots entiers (Types spécifiques)
+    'TMA': [100, 200, 255, 95],    # Bleu clair
+    'CTA': [100, 200, 255, 95]     # Bleu clair
 }
 
-# Constantes de conversion
 FT_TO_M = 0.3048
 M_TO_FT = 3.28084
 
@@ -35,109 +36,130 @@ M_TO_FT = 3.28084
 # 🛠️ LOGIQUE DE CALCUL ET PARSING
 # ==========================================
 
-def parse_altitude_m(alt_str):
-    """Analyse les chaînes OpenAir et retourne une altitude en mètres."""
-    alt_str = str(alt_str).upper().strip()
-    if not alt_str or 'SFC' in alt_str or 'GND' in alt_str: 
-        return 0
-    
-    # Cas Flight Level (ex: FL115)
+def get_prop(props, keys, default):
+    for k in keys:
+        if k in props and props[k] is not None:
+            return props[k]
+    return default
+
+def parse_altitude_m(alt_raw):
+    if isinstance(alt_raw, dict):
+        val = float(alt_raw.get('value', 0))
+        unit = str(alt_raw.get('unit', '')).upper()
+        
+        if unit == 'FL': return int(val * 100 * FT_TO_M)
+        elif unit in ['F', 'FT']: return int(val * FT_TO_M)
+        elif unit == 'M': return int(val)
+        return 1000
+
+    alt_str = str(alt_raw).upper().strip()
+    if not alt_str or 'SFC' in alt_str or 'GND' in alt_str: return 0
     match_fl = re.search(r'FL\s*(\d+)', alt_str)
-    if match_fl: 
-        return int(match_fl.group(1)) * 100 * FT_TO_M
-    
-    # Cas Pieds (ex: 3500 FT)
+    if match_fl: return int(match_fl.group(1)) * 100 * FT_TO_M
     match_ft = re.search(r'(\d+)', alt_str)
-    if match_ft: 
-        return int(match_ft.group(1)) * FT_TO_M
-    
-    return 1000 # Valeur de secours
+    if match_ft: return int(match_ft.group(1)) * FT_TO_M
+    return 1000 
 
-def build_feature(zone, max_alt_m):
-    """Construit un objet GeoJSON 3D pour une zone donnée."""
-    z_class = zone.get('class', 'U')
-    color = ZONE_COLORS.get(z_class[0] if z_class else 'U', ZONE_COLORS['U'])
-    
-    floor_m = zone.get('floor_m', 0)
-    ceiling_m = zone.get('ceiling_m', 10000)
-    
-    # Calcul des métadonnées pour le JS
-    floor_ft = int(floor_m * M_TO_FT)
-    
-    # Épaisseur pour l'extrusion Deck.gl
-    display_ceiling = min(ceiling_m, max_alt_m)
-    thickness_m = max(0, display_ceiling - floor_m)
-    
-    # Coordonnées 3D : [Longitude, Latitude, Altitude_Plancher]
-    coords_3d = [[pt[0], pt[1], floor_m] for pt in zone['coords']]
-    
-    return {
-        "type": "Feature",
-        "properties": {
-            "name": zone.get('name', 'Inconnu'),
-            "class": z_class,
-            "thickness_m": thickness_m,
-            "floor_ft": floor_ft,
-            "real_floor": zone.get('floor_txt', 'SFC'),
-            "real_ceiling": zone.get('ceiling_txt', 'Inconnu'),
-            "color": color
-        },
-        "geometry": {
-            "type": "Polygon", 
-            "coordinates": [coords_3d]
-        }
-    }
+def format_altitude_text(alt_raw):
+    if isinstance(alt_raw, dict):
+        val = alt_raw.get('value', 0)
+        unit = str(alt_raw.get('unit', '')).upper()
+        ref = str(alt_raw.get('reference', '')).upper()
+        if unit == 'FL': return f"FL {int(val)}"
+        else: return f"{int(val)} {unit} {ref}".strip()
+    return str(alt_raw)
 
-def process_airspaces():
-    """Récupère et transforme les données OpenAir."""
-    print(f"📡 Récupération des données OpenAir (Limite FL{FL_LIMIT})...")
+def add_z_to_coordinates(coords, z_value):
+    if isinstance(coords[0], (int, float)): 
+        return [coords[0], coords[1], z_value]
+    else:
+        return [add_z_to_coordinates(c, z_value) for c in coords]
+
+def process_geojson():
+    print(f"📡 Téléchargement du GeoJSON source...")
     limit_m = FL_LIMIT * 100 * FT_TO_M
     
     try:
-        res = requests.get(AIRSPACE_URL, timeout=10)
+        res = requests.get(GEOJSON_URL, timeout=15)
         res.raise_for_status()
+        source_data = res.json()
     except Exception as e:
         print(f"❌ Erreur de téléchargement : {e}")
         return False
 
-    features = []
-    current_zone = None
+    features_3d = []
 
-    for line in res.text.split('\n'):
-        line = line.strip()
-        if not line or line.startswith('*'): continue
-        
-        if line.startswith('AC '): # Nouvelle Zone (Classe)
-            if current_zone and len(current_zone.get('coords', [])) >= 3:
-                if current_zone.get('floor_m', 0) < limit_m:
-                    features.append(build_feature(current_zone, limit_m))
-            current_zone = {'class': line[3:].strip(), 'coords': []}
-        
-        elif line.startswith('AN ') and current_zone: # Nom
-            current_zone['name'] = line[3:].strip()
-        
-        elif line.startswith('AL ') and current_zone: # Plancher
-            current_zone['floor_m'] = parse_altitude_m(line[3:])
-            current_zone['floor_txt'] = line[3:].strip()
-            
-        elif line.startswith('AH ') and current_zone: # Plafond
-            current_zone['ceiling_m'] = parse_altitude_m(line[3:])
-            current_zone['ceiling_txt'] = line[3:].strip()
-            
-        elif line.startswith('DP ') and current_zone: # Point
-            m = re.match(r'DP\s+(\d+):(\d+):(\d+)\s+([NS])\s+(\d+):(\d+):(\d+)\s+([EW])', line)
-            if m:
-                lat = int(m.group(1)) + int(m.group(2))/60 + int(m.group(3))/3600
-                if m.group(4) == 'S': lat = -lat
-                lon = int(m.group(5)) + int(m.group(6))/60 + int(m.group(7))/3600
-                if m.group(8) == 'W': lon = -lon
-                current_zone['coords'].append([lon, lat])
+    for feat in source_data.get('features', []):
+        props = feat.get('properties', {})
+        geom = feat.get('geometry')
+        if not geom: continue
 
-    # Enregistrement du fichier JSON
+        name = get_prop(props, ['name', 'NAME', 'Name'], 'Inconnu')
+        
+        raw_class = get_prop(props, ['class', 'CLASS', 'Class'], 'U')
+        raw_type = get_prop(props, ['type', 'TYPE', 'Type'], '')
+        
+        full_class = str(raw_class).upper().strip()
+        full_type = str(raw_type).upper().strip()
+        
+        floor_raw = get_prop(props, ['lowerCeiling', 'lowerLimit', 'lower', 'LOWER', 'floor', 'FLOOR', 'bottom'], 'SFC')
+        ceiling_raw = get_prop(props, ['upperCeiling', 'upperLimit', 'upper', 'UPPER', 'ceiling', 'CEILING', 'top'], '10000 FT')
+
+        floor_m = parse_altitude_m(floor_raw)
+        ceiling_m = parse_altitude_m(ceiling_raw)
+        
+        if floor_m >= limit_m:
+            continue
+
+        floor_ft = int(floor_m * M_TO_FT)
+        display_ceiling = min(ceiling_m, limit_m)
+        thickness_m = max(0, display_ceiling - floor_m)
+        
+        floor_txt = format_altitude_text(floor_raw)
+        ceiling_txt = format_altitude_text(ceiling_raw)
+        
+        # --- LOGIQUE DE COULEUR ---
+        # A. On détermine la couleur de base via la CLASSE
+        if full_class in ZONE_COLORS:
+            color = ZONE_COLORS[full_class]
+        else:
+            class_letter = full_class[0] if full_class else 'U'
+            color = ZONE_COLORS.get(class_letter, ZONE_COLORS['U'])
+
+        # B. OVERRIDE : Règle stricte pour les TYPES
+        if full_type == 'RMZ' or full_type == 'TMZ':
+            color = [150, 150, 150, 75]  # Gris discret pour RMZ/TMZ
+        else:
+            type_letter = full_type[0] if full_type else ''
+            if type_letter in ['R', 'P', 'D']:
+                color = [255, 0, 0, 120]  # Rouge vif pour Restreint/Prohibé/Danger
+            
+        # Création d'un libellé propre pour l'infobulle
+        display_text = full_class
+        if full_type and full_type != full_class:
+            if full_class == 'U':
+                display_text = full_type
+            else:
+                display_text = f"{full_type} (Class {full_class})"
+
+        geom['coordinates'] = add_z_to_coordinates(geom['coordinates'], floor_m)
+
+        feat['properties'] = {
+            "name": str(name),
+            "class": display_text,
+            "thickness_m": thickness_m,
+            "floor_ft": floor_ft,
+            "real_floor": floor_txt,
+            "real_ceiling": ceiling_txt,
+            "color": color
+        }
+        
+        features_3d.append(feat)
+
     with open(DATA_FILE, "w", encoding="utf-8") as f:
-        json.dump({"type": "FeatureCollection", "features": features}, f)
+        json.dump({"type": "FeatureCollection", "features": features_3d}, f)
     
-    print(f"✅ {DATA_FILE} mis à jour avec {len(features)} zones.")
+    print(f"✅ {DATA_FILE} généré ({len(features_3d)} zones traitées avec succès).")
     return True
 
 # ==========================================
@@ -145,39 +167,31 @@ def process_airspaces():
 # ==========================================
 
 if __name__ == "__main__":
-    # 1. Mise à jour des données au lancement
-    process_airspaces()
+    process_geojson()
 
-    # 2. Préparation du serveur HTTP
     socketserver.TCPServer.allow_reuse_address = True
     try:
         httpd = socketserver.TCPServer(("", PORT), http.server.SimpleHTTPRequestHandler)
     except Exception as e:
-        print(f"❌ Impossible de lancer le serveur sur le port {PORT}: {e}")
+        print(f"❌ Erreur port {PORT}: {e}")
         sys.exit(1)
 
-    # 3. Lancement du serveur en arrière-plan (Thread Daemon)
-    # daemon=True permet d'arrêter le serveur dès que le script Python s'arrête
-    server_thread = threading.Thread(target=httpd.serve_forever, daemon=True)
-    server_thread.start()
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
     
     print("\n" + "="*50)
     print(f"🚀 CARTE VFR 3D DISPONIBLE : http://localhost:{PORT}")
-    print(f"📍 Point de vue initial : LFLG (Grenoble Le Versoud)")
     print("="*50)
     
     webbrowser.open(f"http://localhost:{PORT}")
 
-    # 4. Interface de contrôle dans le terminal
-    print("\n[SYSTÈME] Le serveur tourne. La carte est active.")
-    print("[SYSTÈME] Appuie sur [ENTRÉE] dans ce terminal pour quitter proprement.")
+    print("\n[SYSTÈME] Le serveur tourne. Appuie sur [ENTRÉE] ici pour quitter.")
     
     try:
-        input() # Attente utilisateur
+        input()
     except KeyboardInterrupt:
         pass
 
-    print("\n🛑 Signal d'arrêt reçu. Fermeture du serveur...")
+    print("\n🛑 Fermeture du serveur...")
     httpd.shutdown()
     httpd.server_close()
-    print("👋 À bientôt pour un prochain vol !")
+    print("👋 À bientôt !")
